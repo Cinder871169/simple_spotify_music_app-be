@@ -35,33 +35,33 @@ app.post("/login", (req, res) => {
     });
 });
 
-// Refresh token API
-app.post("/refresh", (req, res) => {
-  const refreshToken = req.body.refreshToken;
-  console.log("Received refresh token:", refreshToken);
+// // Refresh token API
+// app.post("/refresh", (req, res) => {
+//   const refreshToken = req.body.refreshToken;
+//   console.log("Received refresh token:", refreshToken);
 
-  // Khởi tạo API Spotify với thông tin client và refresh token
-  const spotifyApi = new SpotifyWebApi({
-    redirectUri: "http://127.0.0.1:3000/callback",
-    clientId: process.env.CLIENT_ID,
-    clientSecret: process.env.CLIENT_SECRET,
-    refreshToken,
-  });
+//   // Khởi tạo API Spotify với thông tin client và refresh token
+//   const spotifyApi = new SpotifyWebApi({
+//     redirectUri: "http://127.0.0.1:3000/callback",
+//     clientId: process.env.CLIENT_ID,
+//     clientSecret: process.env.CLIENT_SECRET,
+//     refreshToken,
+//   });
 
-  // Lấy token truy cập mới
-  spotifyApi
-    .refreshAccessToken()
-    .then((data) => {
-      res.json({
-        accessToken: data.body.access_token,
-        expiresIn: data.body.expires_in,
-      });
-    })
-    .catch((err) => {
-      console.log(err);
-      res.sendStatus(400);
-    });
-});
+//   // Lấy token truy cập mới
+//   spotifyApi
+//     .refreshAccessToken()
+//     .then((data) => {
+//       res.json({
+//         accessToken: data.body.access_token,
+//         expiresIn: data.body.expires_in,
+//       });
+//     })
+//     .catch((err) => {
+//       console.log(err);
+//       res.sendStatus(400);
+//     });
+// });
 
 // API tim kiếm lời bài hát
 app.get("/lyrics", async (req, res) => {
