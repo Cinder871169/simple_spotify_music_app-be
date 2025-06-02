@@ -2,66 +2,139 @@ const express = require("express");
 const bodyParser = require("body-parser");
 const cors = require("cors");
 const SpotifyWebApi = require("spotify-web-api-node");
+const dbConnect = require("./db/dbConnect");
 require("dotenv").config();
+const jwt = require("jsonwebtoken");
+const User = require("./db/userModel");
+
+const secretKey = process.env.JWT_SECRET_KEY;
+
+function verifyToken(req, res, next) {
+  const authHeader = req.headers["authorization"];
+
+  if (typeof authHeader !== "undefined") {
+    const token = authHeader.split(" ")[1];
+    jwt.verify(token, secretKey, (err, decoded) => {
+      if (err) {
+        return res.status(401).json({ message: "Invalid token" });
+      } else {
+        req.user = decoded;
+        next();
+      }
+    });
+  } else {
+    return res.status(401).json({ message: "Unauthorized: Token missing" });
+  }
+}
 
 const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
-// Login API
-app.post("/login", (req, res) => {
-  const code = req.body.code;
+app.post("/login", async (req, res) => {
+  const { login_name, password } = req.body;
 
-  // Khởi tạo API Spotify với thông tin client
-  const spotifyApi = new SpotifyWebApi({
-    redirectUri: process.env.REDIRECT_URI,
-    clientId: process.env.CLIENT_ID,
-    clientSecret: process.env.CLIENT_SECRET,
-  });
+  if (
+    !login_name ||
+    !password ||
+    typeof login_name !== "string" ||
+    typeof password !== "string" ||
+    login_name.trim() === "" ||
+    password.trim() === ""
+  ) {
+    return res.status(400).json({ error: "Invalid or missing login_name" });
+  }
+  try {
+    const user = await User.findOne(
+      { login_name },
+      "_id password client_id client_secret first_name last_name spotify_id"
+    );
 
-  // Lấy token truy cập
-  spotifyApi
-    .authorizationCodeGrant(code)
-    .then((data) => {
-      res.json({
-        accessToken: data.body.access_token,
-        refreshToken: data.body.refresh_token,
-        expiresIn: data.body.expires_in,
-      });
-    })
-    .catch((err) => {
-      console.error("Error during authorization code grant:", err);
-    });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    if (user.password !== password) {
+      return res.status(401).json({ message: "Invalid password" });
+    }
+
+    const token = jwt.sign(
+      {
+        userId: user._id,
+        login_name: user.login_name,
+      },
+      secretKey,
+      {
+        expiresIn: "1h",
+      }
+    );
+
+    const response = {
+      token,
+      user: {
+        id: user._id,
+        login_name: user.login_name,
+        first_name: user.first_name,
+        last_name: user.last_name,
+        client_id: user.client_id,
+        client_secret: user.client_secret,
+        spotify_id: user.spotify_id,
+        type: user.type,
+      },
+    };
+
+    res.status(200).json(response);
+  } catch (error) {
+    console.error("Login error:", error);
+    res.status(500).json({ message: "Internal server error", error });
+  }
 });
 
-// // Refresh token API
-// app.post("/refresh", (req, res) => {
-//   const refreshToken = req.body.refreshToken;
-//   console.log("Received refresh token:", refreshToken);
+app.post("/logout", verifyToken, (req, res) => {
+  res.status(200).json({ message: "Logout successful" });
+});
 
-//   // Khởi tạo API Spotify với thông tin client và refresh token
-//   const spotifyApi = new SpotifyWebApi({
-//     redirectUri: "http://127.0.0.1:3000/callback",
-//     clientId: process.env.CLIENT_ID,
-//     clientSecret: process.env.CLIENT_SECRET,
-//     refreshToken,
-//   });
+// Authentication API
+app.post("/authenticate", verifyToken, async (req, res) => {
+  const code = req.body.code;
 
-//   // Lấy token truy cập mới
-//   spotifyApi
-//     .refreshAccessToken()
-//     .then((data) => {
-//       res.json({
-//         accessToken: data.body.access_token,
-//         expiresIn: data.body.expires_in,
-//       });
-//     })
-//     .catch((err) => {
-//       console.log(err);
-//       res.sendStatus(400);
-//     });
-// });
+  // Get user info from the verified JWT
+  const userId = req.user.userId;
+  try {
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    // Initialize Spotify API with user's client info
+    const spotifyApi = new SpotifyWebApi({
+      redirectUri: process.env.REDIRECT_URI,
+      clientId: user.client_id,
+      clientSecret: user.client_secret,
+    });
+
+    // Get access token from Spotify
+    spotifyApi
+      .authorizationCodeGrant(code)
+      .then((data) => {
+        res.json({
+          accessToken: data.body.access_token,
+          refreshToken: data.body.refresh_token,
+          expiresIn: data.body.expires_in,
+          spotify_id: user.spotify_id,
+          first_name: user.first_name,
+          last_name: user.last_name,
+        });
+      })
+      .catch((err) => {
+        console.error("Error during authorization code grant:", err);
+        res.status(500).json({ error: "Spotify authorization failed" });
+      });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // API tim kiếm lời bài hát
 app.get("/lyrics", async (req, res) => {
@@ -84,6 +157,8 @@ app.get("/lyrics", async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
+dbConnect();
 
 // Khởi động server
 app.listen(5000, () => {
