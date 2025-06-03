@@ -4,6 +4,7 @@ require("dotenv").config();
 const models = require("../modelData/models.js");
 
 const User = require("../db/userModel.js");
+const Playlist = require("../db/playlistModel.js");
 
 async function dbLoad() {
   try {
@@ -14,6 +15,7 @@ async function dbLoad() {
   }
 
   await User.deleteMany({});
+  await Playlist.deleteMany({});
 
   const userModels = models.userListModel();
   const mapFakeId2RealId = {};
@@ -41,6 +43,28 @@ async function dbLoad() {
       console.error("Error create user", error);
     }
   }
+
+  const playlistModels = models.playlistListModel();
+  for (const playlist of playlistModels) {
+    const playlistObj = new Playlist({
+      name: playlist.name,
+      playlistId: playlist.playlistId,
+      owner: playlist.owner,
+      tracks: playlist.tracks,
+    });
+    try {
+      await playlistObj.save();
+      console.log(
+        "Adding playlist:",
+        playlist.name,
+        "with ID",
+        playlist.playlistId
+      );
+    } catch (error) {
+      console.error("Error create playlist", error);
+    }
+  }
+
   mongoose.disconnect();
 }
 
